@@ -22,6 +22,11 @@ export const uploadArtwork = async (
     const { path: uploadedFilePath, originalname } = req.file;
     tempFilePath = uploadedFilePath;
 
+    // Verify the uploaded file exists
+    if (!fs.existsSync(tempFilePath)) {
+      throw new Error(`Uploaded file not found at path: ${tempFilePath}`);
+    }
+
     // 1. Upload original artwork to S3
     let artworkS3Url = "";
     try {
@@ -31,6 +36,7 @@ export const uploadArtwork = async (
         "public-read"
       );
     } catch (s3Error) {
+      console.error("S3 Upload Error:", s3Error);
       throw new Error("Failed to upload original artwork to cloud storage");
     }
 
@@ -81,6 +87,7 @@ export const uploadArtwork = async (
       );
       console.log("✓ Base image generated and uploaded to S3:", baseImageS3Url);
     } catch (genError) {
+      console.warn("Base image generation failed:", genError);
       const user = await Upload.findOne({ user: req.user.userId });
       baseImageS3Url = user?.baseImagePath || ""; // if generation failed, use the base image from the database from the previous upload
     }
@@ -115,6 +122,27 @@ export const uploadArtwork = async (
   } catch (error) {
     let errorMessage = "Server error during artwork upload";
     let statusCode = 500;
+
+    // Handle specific error types
+    if (error instanceof Error) {
+      console.error("Upload error:", error.message);
+      
+      if (error.message.includes('ENOENT')) {
+        errorMessage = "File system error: Upload directory or file not found";
+        statusCode = 500;
+      } else if (error.message.includes('not found at path')) {
+        errorMessage = "Uploaded file could not be located on server";
+        statusCode = 500;
+      } else if (error.message.includes('cloud storage')) {
+        errorMessage = "Failed to upload to cloud storage";
+        statusCode = 502;
+      } else if (error.message.includes('database')) {
+        errorMessage = "Database error occurred";
+        statusCode = 503;
+      } else {
+        errorMessage = error.message;
+      }
+    }
 
     res.status(statusCode).json({
       message: errorMessage,
