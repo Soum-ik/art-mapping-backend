@@ -1,4 +1,4 @@
-# Multi-stage build for Node.js backend using Bun
+# Multi-stage build for Node.js backend
 FROM node:20-alpine AS development
 
 WORKDIR /app
@@ -35,4 +35,4 @@ RUN npm install --production
 COPY --from=development /app/dist ./dist
 
 # Start the application
-CMD ["node", "dist/server.ts"]
+CMD ["node", "dist/server.js"]
