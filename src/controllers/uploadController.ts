@@ -5,6 +5,9 @@ import { uploadFileToS3, uploadBufferToS3 } from "../utils/sendFiletoS3";
 import axios from "axios";
 import fs from "fs";
 
+// Fallback base image URL when all other options fail //because sometime hugging face guiod client api is not working so we are using this fallback url
+const FALLBACK_BASE_IMAGE_URL = "https://artwork-testing.s3.ap-south-1.amazonaws.com/base-image-1751145561950.webp";
+
 export const uploadArtwork = async (
   req: AuthRequest,
   res: Response
@@ -114,6 +117,12 @@ export const uploadArtwork = async (
         console.error("Fallback base image retrieval failed:", fallbackError);
         baseImageS3Url = "";
       }
+      
+      // If still no base image found, use the default fallback URL
+      if (!baseImageS3Url) {
+        baseImageS3Url = FALLBACK_BASE_IMAGE_URL;
+        console.log("→ Using fallback base image URL:", baseImageS3Url);
+      }
     }
 
     // 3. Save to database (this should always work even if base image failed)
@@ -122,7 +131,7 @@ export const uploadArtwork = async (
       newUpload = new Upload({
         user: req.user.userId,
         originalFilePath: artworkS3Url,
-        baseImagePath: baseImageS3Url, // Will be empty string if generation failed
+        baseImagePath: baseImageS3Url, // Will be fallback URL if everything else failed
       });
       await newUpload.save();
       console.log("✓ Upload record saved to database:", newUpload._id);
@@ -133,40 +142,22 @@ export const uploadArtwork = async (
 
     // 4. Send response to frontend
     res.status(201).json({
-      message: baseImageS3Url
+      message: baseImageS3Url === FALLBACK_BASE_IMAGE_URL
+        ? "Artwork uploaded successfully (using fallback base image)"
+        : baseImageS3Url.includes('base-image-')
         ? "Artwork and base image uploaded successfully"
-        : "Artwork uploaded successfully (base image generation unavailable)",
+        : "Artwork uploaded successfully (using existing base image)",
       upload: {
         id: newUpload._id,
         artworkUrl: artworkS3Url,
         baseImageUrl: baseImageS3Url,
         hasBaseImage: !!baseImageS3Url,
+        usingFallback: baseImageS3Url === FALLBACK_BASE_IMAGE_URL,
       },
     });
   } catch (error) {
     let errorMessage = "Server error during artwork upload";
     let statusCode = 500;
-
-    // Handle specific error types
-    if (error instanceof Error) {
-      console.error("Upload error:", error.message);
-
-      if (error.message.includes("ENOENT")) {
-        errorMessage = "File system error: Upload directory or file not found";
-        statusCode = 500;
-      } else if (error.message.includes("not found at path")) {
-        errorMessage = "Uploaded file could not be located on server";
-        statusCode = 500;
-      } else if (error.message.includes("cloud storage")) {
-        errorMessage = "Failed to upload to cloud storage";
-        statusCode = 502;
-      } else if (error.message.includes("database")) {
-        errorMessage = "Database error occurred";
-        statusCode = 503;
-      } else {
-        errorMessage = error.message;
-      }
-    }
 
     res.status(statusCode).json({
       message: errorMessage,
