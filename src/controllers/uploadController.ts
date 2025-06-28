@@ -42,17 +42,22 @@ export const uploadArtwork = async (
 
     // 2. Generate base image by calling Python API (with graceful degradation)
     let baseImageS3Url = "";
-    
+
     // First, check if user already has a base image from previous uploads
     try {
       const existingUpload = await Upload.findOne({ user: req.user.userId });
       if (existingUpload && existingUpload.baseImagePath) {
         baseImageS3Url = existingUpload.baseImagePath;
-        console.log("✓ Using existing base image from database:", baseImageS3Url);
+        console.log(
+          "✓ Using existing base image from database:",
+          baseImageS3Url
+        );
       } else {
         // User doesn't have a base image, generate one via Python API
-        console.log("→ No existing base image found, generating new one via Python API...");
-        
+        console.log(
+          "→ No existing base image found, generating new one via Python API..."
+        );
+
         const pythonApiUrl =
           "https://test-load-huh2gzdze7dxaxd8.southeastasia-01.azurewebsites.net/api/v1/generate-base-image";
 
@@ -94,7 +99,10 @@ export const uploadArtwork = async (
           contentType,
           "public-read"
         );
-        console.log("✓ New base image generated and uploaded to S3:", baseImageS3Url);
+        console.log(
+          "✓ New base image generated and uploaded to S3:",
+          baseImageS3Url
+        );
       }
     } catch (genError) {
       console.warn("Base image handling failed:", genError);
@@ -142,17 +150,17 @@ export const uploadArtwork = async (
     // Handle specific error types
     if (error instanceof Error) {
       console.error("Upload error:", error.message);
-      
-      if (error.message.includes('ENOENT')) {
+
+      if (error.message.includes("ENOENT")) {
         errorMessage = "File system error: Upload directory or file not found";
         statusCode = 500;
-      } else if (error.message.includes('not found at path')) {
+      } else if (error.message.includes("not found at path")) {
         errorMessage = "Uploaded file could not be located on server";
         statusCode = 500;
-      } else if (error.message.includes('cloud storage')) {
+      } else if (error.message.includes("cloud storage")) {
         errorMessage = "Failed to upload to cloud storage";
         statusCode = 502;
-      } else if (error.message.includes('database')) {
+      } else if (error.message.includes("database")) {
         errorMessage = "Database error occurred";
         statusCode = 503;
       } else {
@@ -177,5 +185,20 @@ export const uploadArtwork = async (
         // Don't throw here - this is just cleanup
       }
     }
+  }
+};
+
+export const getUserUploads = async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.userId;
+  if (!userId) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  try {
+    const uploads = await Upload.find({ user: userId });
+    res.status(200).json(uploads);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch uploads" });
   }
 };
