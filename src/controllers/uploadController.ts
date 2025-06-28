@@ -42,54 +42,70 @@ export const uploadArtwork = async (
 
     // 2. Generate base image by calling Python API (with graceful degradation)
     let baseImageS3Url = "";
+    
+    // First, check if user already has a base image from previous uploads
     try {
-      const pythonApiUrl =
-        "https://test-load-huh2gzdze7dxaxd8.southeastasia-01.azurewebsites.net/api/v1/generate-base-image";
-      console.log("→ Attempting to generate base image via Python API...");
+      const existingUpload = await Upload.findOne({ user: req.user.userId });
+      if (existingUpload && existingUpload.baseImagePath) {
+        baseImageS3Url = existingUpload.baseImagePath;
+        console.log("✓ Using existing base image from database:", baseImageS3Url);
+      } else {
+        // User doesn't have a base image, generate one via Python API
+        console.log("→ No existing base image found, generating new one via Python API...");
+        
+        const pythonApiUrl =
+          "https://test-load-huh2gzdze7dxaxd8.southeastasia-01.azurewebsites.net/api/v1/generate-base-image";
 
-      // Add timeout to prevent hanging
-      const generationResponse = await axios.post(
-        pythonApiUrl,
-        {},
-        {
-          timeout: 30000, // 30 seconds timeout
-          headers: {
-            "Content-Type": "application/json",
-          },
+        // Add timeout to prevent hanging
+        const generationResponse = await axios.post(
+          pythonApiUrl,
+          {},
+          {
+            timeout: 30000, // 30 seconds timeout
+            headers: {
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (
+          generationResponse.status !== 200 ||
+          !generationResponse.data?.base64Image
+        ) {
+          throw new Error("Invalid response from Python API");
         }
-      );
 
-      if (
-        generationResponse.status !== 200 ||
-        !generationResponse.data?.base64Image
-      ) {
-        throw new Error("Invalid response from Python API");
+        const base64Image = generationResponse.data.base64Image;
+        const matches = base64Image.match(/^data:(.+);base64,(.+)$/);
+
+        if (!matches || matches.length !== 3) {
+          throw new Error("Invalid base64 image string format from Python API");
+        }
+
+        const contentType = matches[1];
+        const imageBuffer = Buffer.from(matches[2], "base64");
+        const fileExtension = contentType.split("/")[1] || "webp";
+        const baseImageFileName = `base-image-${Date.now()}.${fileExtension}`;
+
+        // Upload generated image buffer to S3
+        baseImageS3Url = await uploadBufferToS3(
+          imageBuffer,
+          baseImageFileName,
+          contentType,
+          "public-read"
+        );
+        console.log("✓ New base image generated and uploaded to S3:", baseImageS3Url);
       }
-
-      const base64Image = generationResponse.data.base64Image;
-      const matches = base64Image.match(/^data:(.+);base64,(.+)$/);
-
-      if (!matches || matches.length !== 3) {
-        throw new Error("Invalid base64 image string format from Python API");
-      }
-
-      const contentType = matches[1];
-      const imageBuffer = Buffer.from(matches[2], "base64");
-      const fileExtension = contentType.split("/")[1] || "webp";
-      const baseImageFileName = `base-image-${Date.now()}.${fileExtension}`;
-
-      // Upload generated image buffer to S3
-      baseImageS3Url = await uploadBufferToS3(
-        imageBuffer,
-        baseImageFileName,
-        contentType,
-        "public-read"
-      );
-      console.log("✓ Base image generated and uploaded to S3:", baseImageS3Url);
     } catch (genError) {
-      console.warn("Base image generation failed:", genError);
-      const user = await Upload.findOne({ user: req.user.userId });
-      baseImageS3Url = user?.baseImagePath || ""; // if generation failed, use the base image from the database from the previous upload
+      console.warn("Base image handling failed:", genError);
+      // If everything fails, try to get any existing base image as fallback
+      try {
+        const fallbackUpload = await Upload.findOne({ user: req.user.userId });
+        baseImageS3Url = fallbackUpload?.baseImagePath || "";
+      } catch (fallbackError) {
+        console.error("Fallback base image retrieval failed:", fallbackError);
+        baseImageS3Url = "";
+      }
     }
 
     // 3. Save to database (this should always work even if base image failed)
