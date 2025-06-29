@@ -11,6 +11,8 @@ const AWS_REGION = process.env.AWS_REGION;
 const AWS_BUCKET_NAME = process.env.AWS_BUCKET_NAME;
 const HUGGING_FACE_API_KEY = process.env.HUGGING_FACE_API_KEY;
 const HUGGING_FACE_API_URL = process.env.HUGGING_FACE_API_URL;
+// Fallback base image URL when all other options fail //because sometime hugging face guiod client api is not working so we are using this fallback url
+const FALLBACK_BASE_IMAGE_URL = "https://artwork-testing.s3.ap-south-1.amazonaws.com/base-image-1751145561950.webp";
 
 export {
   PORT,
@@ -22,4 +24,5 @@ export {
   AWS_SECRET_ACCESS_KEY,
   AWS_BUCKET_NAME,
   AWS_REGION,
+  FALLBACK_BASE_IMAGE_URL
 };
