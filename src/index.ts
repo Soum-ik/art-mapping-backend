@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import apiRoutes from './routes';
+import { redisClient } from './redis/redisConnection';
 
 const app: Express = express();
 
